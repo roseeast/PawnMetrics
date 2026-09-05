@@ -1,0 +1,44 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch SA-MP plugin SDK
+        run: git clone --depth 1 https://github.com/maddinat0r/samp-plugin-sdk.git third_party/samp-plugin-sdk
+      - name: Build Linux plugin
+        run: make linux SDK_DIR=third_party/samp-plugin-sdk
+      - name: Package
+        run: make package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pawn-metrics-linux
+          path: dist/
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: git make mingw-w64-i686-gcc
+      - name: Fetch SA-MP plugin SDK
+        shell: msys2 {0}
+        run: git clone --depth 1 https://github.com/maddinat0r/samp-plugin-sdk.git third_party/samp-plugin-sdk
+      - name: Build Windows plugin
+        shell: msys2 {0}
+        run: make windows SDK_DIR=third_party/samp-plugin-sdk WIN_CXX=/mingw32/bin/i686-w64-mingw32-g++
+      - name: Package
+        shell: msys2 {0}
+        run: make package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pawn-metrics-windows
+          path: dist/

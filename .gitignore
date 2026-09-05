@@ -1,0 +1,63 @@
+# Build output
+build/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile.user
+
+# Packaged release output
+dist/
+release/
+
+# Native binaries and intermediate files
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.o
+*.obj
+*.lo
+*.la
+*.res
+
+# Pawn compiler output
+*.amx
+*.lst
+*.asm
+
+# Local SDKs and toolchains
+third_party/
+vendor/
+tools/
+*.tar
+*.tar.gz
+*.tar.xz
+*.zip
+
+# Logs and runtime files
+*.log
+logs/
+server_log.txt
+crashinfo.txt
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

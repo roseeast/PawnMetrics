@@ -1,0 +1,63 @@
+#include <a_samp>
+#include <pawn_metrics>
+
+main()
+{
+}
+
+public OnGameModeInit()
+{
+    if (!Metrics_Start(9100))
+    {
+        print("[pawn-metrics] failed to start metrics server");
+        return 1;
+    }
+
+    Metrics_UpdateServerInfo();
+    Metrics_SetInt("samp_players_online", 0);
+    Metrics_SetInt("samp_connects_total", 0);
+    Metrics_SetInt("samp_disconnects_total", 0);
+    Metrics_SetInt("samp_commands_total", 0);
+    Metrics_SetInt("samp_anticheat_flags_total", 0);
+    Metrics_SetInt("samp_money_created_total", 0);
+    Metrics_SetInt("samp_money_removed_total", 0);
+
+    SetTimer("Metrics_Update", 5000, true);
+    print("[pawn-metrics] scrape endpoint: http://127.0.0.1:9100/metrics");
+    return 1;
+}
+
+public OnGameModeExit()
+{
+    Metrics_Stop();
+    return 1;
+}
+
+public OnPlayerConnect(playerid)
+{
+    Metrics_Inc("samp_connects_total");
+    Metrics_SetPlayersOnline();
+    return 1;
+}
+
+public OnPlayerDisconnect(playerid, reason)
+{
+    Metrics_Inc("samp_disconnects_total");
+    Metrics_SetPlayersOnline();
+    return 1;
+}
+
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+    Metrics_Inc("samp_commands_total");
+    return 0;
+}
+
+forward Metrics_Update();
+public Metrics_Update()
+{
+    Metrics_UpdateServerInfo();
+    Metrics_SetPlayersOnline();
+    return 1;
+}
+
