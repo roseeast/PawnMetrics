@@ -4,6 +4,7 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -42,6 +43,15 @@ void socket_send_all(int socket_fd, const std::string& data)
     }
 }
 
+std::string http_response(const std::string& status, const std::string& body, const std::string& content_type)
+{
+    return "HTTP/1.1 " + status + "\r\n"
+        "Content-Type: " + content_type + "\r\n"
+        "Connection: close\r\n"
+        "Content-Length: " + std::to_string(body.size()) + "\r\n"
+        "\r\n" + body;
+}
+
 }
 
 MetricsServer::MetricsServer(MetricsStore& store) : store_(store)
@@ -53,7 +63,7 @@ MetricsServer::~MetricsServer()
     stop();
 }
 
-bool MetricsServer::start(std::uint16_t port)
+bool MetricsServer::start(const std::string& bind_address, std::uint16_t port, const std::string& auth_token)
 {
     if (running_) {
         return true;
@@ -67,7 +77,7 @@ bool MetricsServer::start(std::uint16_t port)
 #endif
 
     running_ = true;
-    thread_ = std::thread(&MetricsServer::run, this, port);
+    thread_ = std::thread(&MetricsServer::run, this, bind_address, port, auth_token);
     return true;
 }
 
@@ -94,7 +104,7 @@ bool MetricsServer::running() const
     return running_;
 }
 
-void MetricsServer::run(std::uint16_t port)
+void MetricsServer::run(std::string bind_address, std::uint16_t port, std::string auth_token)
 {
     socket_ = static_cast<int>(socket(AF_INET, SOCK_STREAM, 0));
     if (socket_ < 0) {
@@ -107,8 +117,15 @@ void MetricsServer::run(std::uint16_t port)
 
     sockaddr_in address {};
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_ANY);
     address.sin_port = htons(port);
+
+    if (bind_address.empty() || bind_address == "0.0.0.0" || bind_address == "*") {
+        address.sin_addr.s_addr = htonl(INADDR_ANY);
+    } else if (inet_pton(AF_INET, bind_address.c_str(), &address.sin_addr) != 1) {
+        close_socket();
+        running_ = false;
+        return;
+    }
 
     if (bind(socket_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
         close_socket();
@@ -135,19 +152,20 @@ void MetricsServer::run(std::uint16_t port)
             continue;
         }
 
-        char buffer[1024] {};
+        char buffer[4096] {};
         recv(client_socket, buffer, sizeof(buffer) - 1, 0);
 
         const std::string request(buffer);
-        const bool metrics_path = request.rfind("GET /metrics ", 0) == 0 || request.rfind("GET / ", 0) == 0;
-        const std::string body = metrics_path ? store_.render() : "not found\n";
-        const std::string status = metrics_path ? "200 OK" : "404 Not Found";
-        const std::string response =
-            "HTTP/1.1 " + status + "\r\n"
-            "Content-Type: text/plain; version=0.0.4\r\n"
-            "Connection: close\r\n"
-            "Content-Length: " + std::to_string(body.size()) + "\r\n"
-            "\r\n" + body;
+        const bool metrics_path = request.rfind("GET /metrics", 0) == 0 || request.rfind("GET / ", 0) == 0;
+        std::string response;
+
+        if (!metrics_path) {
+            response = http_response("404 Not Found", "not found\n", "text/plain");
+        } else if (!is_authorized(request, auth_token)) {
+            response = http_response("401 Unauthorized", "unauthorized\n", "text/plain");
+        } else {
+            response = http_response("200 OK", store_.render(), "text/plain; version=0.0.4");
+        }
 
         socket_send_all(client_socket, response);
         socket_close(client_socket);
@@ -166,3 +184,14 @@ void MetricsServer::close_socket()
     }
 }
 
+bool MetricsServer::is_authorized(const std::string& request, const std::string& auth_token)
+{
+    if (auth_token.empty()) {
+        return true;
+    }
+
+    const std::string bearer = "Authorization: Bearer " + auth_token;
+    const std::string query = "token=" + auth_token;
+
+    return request.find(bearer) != std::string::npos || request.find(query) != std::string::npos;
+}

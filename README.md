@@ -32,10 +32,11 @@ Pawn Metrics lets Pawn gamemodes expose server, gameplay, economy, admin, and an
 | --- | --- |
 | Plugin name | `pawn_metrics` |
 | Target | SA-MP and open.mp |
-| Plugin type | Legacy SA-MP plugin API |
+| Plugin type | Legacy SA-MP plugin API & Native open.mp Component |
 | Language | C++17 |
 | Metrics format | Prometheus text exposition format |
 | Default endpoint | `http://127.0.0.1:9100/metrics` |
+| Config file format | Simple `key=value` file |
 | External runtime deps | None bundled by Pawn Metrics |
 | Included platforms | Linux x86_64, Windows i386 |
 | Pawn include | `pawno/include/pawn_metrics.inc` |
@@ -49,6 +50,12 @@ Pawn Metrics lets Pawn gamemodes expose server, gameplay, economy, admin, and an
 | Set gauge value | `Metrics_Set`, `Metrics_SetInt` | Useful for online players, queue sizes, loaded houses, etc. |
 | Increment counter | `Metrics_Inc` | Useful for connects, commands, kills, reports, warnings. |
 | Add numeric value | `Metrics_Add`, `Metrics_AddInt` | Useful for money created/removed, item flow, query counts. |
+| Labeled metrics | `Metrics_*Labeled` | Adds Prometheus labels such as `reason="teleport"` or `type="report"`. |
+| Histograms | `Metrics_ObserveHistogram` | Records bucketed observations with default Prometheus-style buckets. |
+| Summaries | `Metrics_ObserveSummary` | Records `_sum` and `_count` observations. |
+| Auth token | `Metrics_SetAuthToken` | Protects `/metrics` with bearer token or `?token=` access. |
+| Bind address | `Metrics_StartEx` | Binds the exporter to a specific IPv4 address. |
+| Config file | `Metrics_LoadConfig`, `Metrics_StartFromConfig` | Loads bind address, port, and auth token from file. |
 | Remove metric | `Metrics_Remove` | Deletes one metric from the exporter. |
 | Clear metrics | `Metrics_Clear` | Resets all registered metrics. |
 | Server helper | `Metrics_UpdateServerInfo` | Stock helper for server info. |
@@ -60,22 +67,27 @@ Prebuilt release packages are available in `release/`.
 
 | File | Format | Contents |
 | --- | --- | --- |
-| `release/pawn-metrics-0.1.0.zip` | ZIP | Windows-friendly release archive. |
-| `release/pawn-metrics-0.1.0.tar.gz` | tar.gz | Linux-friendly release archive. |
+| `release/pawn-metrics-v0.2.0-windows-x86.zip` | ZIP | Windows release archive (legacy plugin & native component). |
+| `release/pawn-metrics-v0.2.0-linux-x86_64.tar.gz` | tar.gz | Linux release archive (legacy plugin & native component). |
 
 Package layout:
 
 ```text
-pawn-metrics-0.1.0/
+pawn-metrics-v0.2.0/
   plugins/
+    pawn_metrics.so
+    pawn_metrics.dll
+  components/
     pawn_metrics.so
     pawn_metrics.dll
   pawno/include/
     pawn_metrics.inc
   examples/
     example.pwn
+    pawn_metrics.cfg
   README.md
   LICENSE
+  CHANGELOG.md
 ```
 
 ## Compatibility
@@ -84,9 +96,9 @@ pawn-metrics-0.1.0/
 | --- | --- | --- |
 | SA-MP Windows server | Supported | Use `plugins/pawn_metrics.dll`. The included DLL is 32-bit for classic SA-MP Windows servers. |
 | SA-MP Linux server | Supported | Use `plugins/pawn_metrics.so`. The included Linux binary is x86_64. |
-| open.mp Windows server | Supported as legacy plugin | Load through `pawn.legacy_plugins` or legacy config compatibility. |
-| open.mp Linux server | Supported as legacy plugin | Load through `pawn.legacy_plugins` or legacy config compatibility. |
-| Native open.mp component | Not included | This project currently targets the legacy plugin ABI for broad SA-MP/open.mp compatibility. |
+| open.mp Windows server | Supported (Component & Plugin) | Native component: `components/pawn_metrics.dll`. Legacy plugin: `plugins/pawn_metrics.dll`. |
+| open.mp Linux server | Supported (Component & Plugin) | Native component: `components/pawn_metrics.so`. Legacy plugin: `plugins/pawn_metrics.so`. |
+| Native open.mp component | Supported | Load via `"components": ["pawn_metrics"]` in `config.json`. See `components/openmp/README.md`. |
 
 Pawn Metrics does not hook RakNet, patch memory, or depend on internal SA-MP addresses. It only registers Pawn natives and runs a small HTTP listener for metrics scraping.
 
@@ -94,7 +106,9 @@ Pawn Metrics does not hook RakNet, patch memory, or depend on internal SA-MP add
 
 ### 1. Install Files
 
-Copy the release package files into your server:
+#### For SA-MP (Legacy Plugin)
+
+Copy the files from `plugins/` into your server:
 
 ```text
 plugins/pawn_metrics.so        -> Linux server plugins folder
@@ -102,11 +116,21 @@ plugins/pawn_metrics.dll       -> Windows server plugins folder
 pawno/include/pawn_metrics.inc -> Pawn compiler include folder
 ```
 
+#### For open.mp (Native Component - Recommended)
+
+Copy the files from `components/` into your server:
+
+```text
+components/pawn_metrics.so     -> Linux server components folder
+components/pawn_metrics.dll    -> Windows server components folder
+pawno/include/pawn_metrics.inc -> Pawn compiler include folder
+```
+
 For Qawno or custom build systems, place `pawn_metrics.inc` in the include path used by your compiler.
 
-### 2. Load The Plugin
+### 2. Load The Plugin / Component
 
-For SA-MP `server.cfg`:
+#### For SA-MP `server.cfg`:
 
 ```text
 plugins pawn_metrics
@@ -118,7 +142,17 @@ On some older Linux setups:
 plugins pawn_metrics.so
 ```
 
-For open.mp `config.json`:
+#### For open.mp `config.json` (Native Component Mode - Recommended):
+
+```json
+{
+  "components": [
+    "pawn_metrics"
+  ]
+}
+```
+
+#### For open.mp `config.json` (Legacy Plugin Mode):
 
 ```json
 {
@@ -142,10 +176,12 @@ For open.mp `config.json`:
 
 public OnGameModeInit()
 {
-    Metrics_Start(9100);
+    Metrics_SetAuthToken("change-this-token");
+    Metrics_StartEx("127.0.0.1", 9100);
     Metrics_UpdateServerInfo();
     Metrics_SetInt("samp_players_online", 0);
     Metrics_SetInt("samp_connects_total", 0);
+    Metrics_SetLabeledInt("samp_reports_open", "type=\"player\"", 0);
 
     SetTimer("Metrics_Update", 5000, true);
     return 1;
@@ -155,6 +191,7 @@ public OnPlayerConnect(playerid)
 {
     Metrics_Inc("samp_connects_total");
     Metrics_SetPlayersOnline();
+    Metrics_ObserveHistogram("samp_player_connect_seconds", 0.05);
     return 1;
 }
 
@@ -163,6 +200,7 @@ public Metrics_Update()
 {
     Metrics_UpdateServerInfo();
     Metrics_SetPlayersOnline();
+    Metrics_ObserveSummaryLabeled("samp_tick_work_seconds", "source=\"metrics\"", 0.001);
     return 1;
 }
 ```
@@ -170,7 +208,7 @@ public Metrics_Update()
 Then open:
 
 ```text
-http://127.0.0.1:9100/metrics
+http://127.0.0.1:9100/metrics?token=change-this-token
 ```
 
 ## Native API
@@ -178,16 +216,65 @@ http://127.0.0.1:9100/metrics
 | Native | Signature | Return | Description |
 | --- | --- | ---: | --- |
 | `Metrics_Start` | `port = 9100` | `1` or `0` | Starts the HTTP exporter. |
+| `Metrics_StartEx` | `const bind_address[], port = 9100` | `1` or `0` | Starts the exporter on a specific IPv4 address. |
 | `Metrics_Stop` | none | `1` | Stops the exporter. |
 | `Metrics_IsRunning` | none | `1` or `0` | Checks whether the exporter is running. |
+| `Metrics_SetAuthToken` | `const token[]` | `1` | Sets the required bearer/query token for metrics access. |
+| `Metrics_LoadConfig` | `const path[]` | `1` or `0` | Loads config without starting the exporter. |
+| `Metrics_StartFromConfig` | `const path[]` | `1` or `0` | Loads config and starts the exporter. |
 | `Metrics_Set` | `const name[], Float:value` | `1` | Sets a floating-point metric value. |
 | `Metrics_SetInt` | `const name[], value` | `1` | Sets an integer metric value. |
+| `Metrics_SetLabeled` | `const name[], const labels[], Float:value` | `1` | Sets a labeled floating-point metric. |
+| `Metrics_SetLabeledInt` | `const name[], const labels[], value` | `1` | Sets a labeled integer metric. |
 | `Metrics_Inc` | `const name[]` | `1` | Adds `1` to a metric. |
+| `Metrics_IncLabeled` | `const name[], const labels[]` | `1` | Adds `1` to a labeled metric. |
 | `Metrics_Add` | `const name[], Float:value` | `1` | Adds a floating-point value. |
 | `Metrics_AddInt` | `const name[], value` | `1` | Adds an integer value. |
+| `Metrics_AddLabeled` | `const name[], const labels[], Float:value` | `1` | Adds a floating-point value to a labeled metric. |
+| `Metrics_AddLabeledInt` | `const name[], const labels[], value` | `1` | Adds an integer value to a labeled metric. |
+| `Metrics_ObserveHistogram` | `const name[], Float:value` | `1` | Records a histogram observation. |
+| `Metrics_ObserveHistogramLabeled` | `const name[], const labels[], Float:value` | `1` | Records a labeled histogram observation. |
+| `Metrics_ObserveSummary` | `const name[], Float:value` | `1` | Records a summary observation. |
+| `Metrics_ObserveSummaryLabeled` | `const name[], const labels[], Float:value` | `1` | Records a labeled summary observation. |
 | `Metrics_Remove` | `const name[]` | `1` | Removes one metric. |
+| `Metrics_RemoveLabeled` | `const name[], const labels[]` | `1` | Removes one labeled metric. |
 | `Metrics_Clear` | none | `1` | Clears all metrics. |
 | `Metrics_SetServerInfo` | `const hostname[], const gamemode[], maxplayers` | `1` | Updates server info metrics. |
+
+## Config File
+
+Example `scriptfiles/pawn_metrics.cfg`:
+
+```ini
+bind=127.0.0.1
+port=9100
+auth_token=change-this-token
+```
+
+Usage:
+
+```pawn
+public OnGameModeInit()
+{
+    if (!Metrics_StartFromConfig("scriptfiles/pawn_metrics.cfg"))
+    {
+        print("[pawn-metrics] failed to start from config");
+    }
+
+    return 1;
+}
+```
+
+## Authentication
+
+If `auth_token` is empty, the endpoint is public. If a token is configured, requests must use one of these forms:
+
+```text
+Authorization: Bearer change-this-token
+http://127.0.0.1:9100/metrics?token=change-this-token
+```
+
+For production servers, bind to `127.0.0.1` or firewall the metrics port unless Prometheus runs on a trusted remote host.
 
 ## Stock Helpers
 
@@ -268,59 +355,38 @@ samp_players_online 7
 
 ## Build From Source
 
-This repository uses a simple `Makefile`.
+This repository uses CMake (version 3.20+).
 
 ### Requirements
 
 | Target | Requirement |
 | --- | --- |
-| Linux `.so` | `g++`, `make`, SA-MP plugin SDK |
-| Windows `.dll` | `i686-w64-mingw32-g++` or compatible MinGW toolchain, `make`, SA-MP plugin SDK |
-
-By default, the Makefile expects:
-
-```text
-/home/rch/Documents/project-main/build-linux-x64/_deps/samp-plugin-sdk-src
-```
-
-Override it for public builds:
-
-```bash
-make linux SDK_DIR=/path/to/samp-plugin-sdk
-make windows SDK_DIR=/path/to/samp-plugin-sdk
-```
+| Linux `.so` | CMake 3.20+, C++17 compiler (`g++` / `clang++`) |
+| Windows `.dll` | CMake 3.20+, MinGW toolchain (`i686-w64-mingw32-g++`) or MSVC |
 
 ### Linux
 
 ```bash
-make linux
+cmake -B build -S .
+cmake --build build
 ```
 
 Output:
+- `build/plugins/pawn_metrics.so` (Legacy SA-MP plugin)
+- `build/components/pawn_metrics.so` (Native open.mp component)
 
-```text
-dist/pawn_metrics.so
-```
-
-### Windows
+### Windows (Cross-compile with MinGW)
 
 ```bash
-make windows
+cmake -B build-win -S . -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++
+cmake --build build-win
 ```
 
 Output:
-
-```text
-dist/pawn_metrics.dll
-```
+- `build-win/plugins/pawn_metrics.dll` (Legacy SA-MP plugin)
+- `build-win/components/pawn_metrics.dll` (Native open.mp component)
 
 The default Windows target is 32-bit because classic SA-MP Windows servers are 32-bit.
-
-### Package
-
-```bash
-make package
-```
 
 ## GitHub Actions
 
@@ -338,7 +404,7 @@ The workflow in `.github/workflows/build.yml` fetches the SA-MP plugin SDK and b
 
 ## Security Notes
 
-The metrics endpoint has no authentication in version `0.1.0`. Bind or firewall it so only Prometheus, Grafana, or trusted monitoring hosts can access it.
+The metrics endpoint supports a simple bearer/query token. Bind or firewall it so only Prometheus, Grafana, or trusted monitoring hosts can access it.
 
 Do not expose sensitive data such as passwords, auth tokens, private IPs, or player personal information as metric names or values.
 
