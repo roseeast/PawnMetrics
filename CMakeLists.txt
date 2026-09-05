@@ -19,7 +19,10 @@ else()
         GIT_REPOSITORY https://github.com/maddinat0r/samp-plugin-sdk.git
         GIT_TAG master
     )
-    FetchContent_MakeAvailable(samp-plugin-sdk)
+    FetchContent_GetProperties(samp-plugin-sdk)
+    if(NOT samp-plugin-sdk_POPULATED)
+        FetchContent_Populate(samp-plugin-sdk)
+    endif()
     set(SAMP_PLUGIN_SDK_INCLUDE_DIR "${samp-plugin-sdk_SOURCE_DIR}")
 endif()
 
@@ -73,7 +76,10 @@ if(PAWN_METRICS_BUILD_OPENMP_COMPONENT)
             GIT_TAG master
             GIT_SUBMODULES_RECURSE TRUE
         )
-        FetchContent_MakeAvailable(openmp-sdk)
+        FetchContent_GetProperties(openmp-sdk)
+        if(NOT openmp-sdk_POPULATED)
+            FetchContent_Populate(openmp-sdk)
+        endif()
         set(OPENMP_SDK_INCLUDE_DIR "${openmp-sdk_SOURCE_DIR}/include")
         set(OPENMP_SDK_ROOT "${openmp-sdk_SOURCE_DIR}")
     endif()

@@ -7,38 +7,51 @@ on:
 
 jobs:
   linux:
+    name: Linux Build (x86_64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch SA-MP plugin SDK
-        run: git clone --depth 1 https://github.com/maddinat0r/samp-plugin-sdk.git third_party/samp-plugin-sdk
-      - name: Build Linux plugin
-        run: make linux SDK_DIR=third_party/samp-plugin-sdk
-      - name: Package
-        run: make package
-      - uses: actions/upload-artifact@v4
+
+      - name: Configure CMake
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: pawn-metrics-linux
-          path: dist/
+          name: pawn-metrics-linux-x86_64
+          path: |
+            build/plugins/pawn_metrics.so
+            build/components/pawn_metrics.so
 
   windows:
-    runs-on: windows-latest
+    name: Windows Build (x86 32-bit MinGW)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
+
+      - name: Install MinGW Cross-Compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-mingw-w64-i686 gcc-mingw-w64-i686
+
+      - name: Configure CMake
+        run: |
+          cmake -B build-win -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++
+
+      - name: Build
+        run: cmake --build build-win --config Release
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          update: true
-          install: git make mingw-w64-i686-gcc
-      - name: Fetch SA-MP plugin SDK
-        shell: msys2 {0}
-        run: git clone --depth 1 https://github.com/maddinat0r/samp-plugin-sdk.git third_party/samp-plugin-sdk
-      - name: Build Windows plugin
-        shell: msys2 {0}
-        run: make windows SDK_DIR=third_party/samp-plugin-sdk WIN_CXX=/mingw32/bin/i686-w64-mingw32-g++
-      - name: Package
-        shell: msys2 {0}
-        run: make package
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pawn-metrics-windows
-          path: dist/
+          name: pawn-metrics-windows-x86
+          path: |
+            build-win/plugins/pawn_metrics.dll
+            build-win/components/pawn_metrics.dll
